@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>云端贪吃蛇</title>
+<style>
+:root{--bg:#f3f7ff;--card:#fff;--ink:#20304a;--accent:#5b7cfa;--green:#38b879}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:linear-gradient(160deg,#e9f0ff,#f9fbff);color:var(--ink);min-height:100vh;display:flex;justify-content:center;padding:18px}
+main{width:min(100%,480px)}
+h1{text-align:center;margin:8px 0 4px;font-size:30px}
+.sub{text-align:center;color:#687895;margin:0 0 18px}
+.panel{background:var(--card);border-radius:22px;padding:16px;box-shadow:0 10px 30px #304c8715;border:1px solid #e4eaff}
+.stats{display:flex;justify-content:space-between;gap:10px;margin-bottom:12px;font-weight:700}
+.stat{background:#f2f5ff;border-radius:13px;padding:9px 12px;flex:1;text-align:center}
+canvas{display:block;width:100%;height:auto;background:#fbfcff;border:2px solid #e2e9ff;border-radius:14px;touch-action:none}
+.buttons{display:flex;gap:10px;margin-top:12px}
+button{border:0;border-radius:13px;padding:12px 14px;font-size:16px;font-weight:700;background:var(--accent);color:white;cursor:pointer}
+.buttons button{flex:1}
+button.secondary{background:#eaf0ff;color:#3655c9}
+.controls{margin:16px auto 0;width:210px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.controls button{height:52px;padding:0;font-size:22px;background:#eaf0ff;color:#3655c9;touch-action:manipulation}
+.controls .empty{visibility:hidden}
+.help{text-align:center;color:#71809a;font-size:13px;line-height:1.6;margin:13px 0 0}
+#message{text-align:center;min-height:24px;font-weight:700;margin-top:10px;color:#4b65cb}
+</style>
+</head>
+<body>
+<main>
+  <h1>🐍 云端贪吃蛇</h1>
+  <p class="sub">轻松开玩 · 记录你的最高分</p>
+  <section class="panel">
+    <div class="stats">
+      <div class="stat">本局分数：<span id="score">0</span></div>
+      <div class="stat">最高分：<span id="best">0</span></div>
+    </div>
+    <canvas id="game" width="360" height="360" aria-label="贪吃蛇游戏区域"></canvas>
+    <div id="message">点击“开始游戏”</div>
+    <div class="buttons">
+      <button id="start">开始游戏</button>
+      <button id="pause" class="secondary">暂停</button>
+      <button id="restart" class="secondary">重新开始</button>
+    </div>
+    <div class="controls">
+      <span class="empty"></span><button data-dir="up" aria-label="向上">▲</button><span class="empty"></span>
+      <button data-dir="left" aria-label="向左">◀</button><button data-dir="down" aria-label="向下">▼</button><button data-dir="right" aria-label="向右">▶</button>
+    </div>
+    <p class="help">手机可点方向键，也可在游戏区域滑动。电脑可使用方向键或 WASD。吃到圆点得分，撞墙或撞到自己就结束。</p>
+  </section>
+</main>
+<script>
+(() => {
+ const canvas=document.getElementById('game'), ctx=canvas.getContext('2d');
+ const scoreEl=document.getElementById('score'), bestEl=document.getElementById('best'), msg=document.getElementById('message');
+ const SIZE=18, CELLS=20, STEP=canvas.width/CELLS;
+ let snake,dir,nextDir,food,score,timer,running,paused,over;
+ let best=0; try{best=Number(localStorage.getItem('cloudSnakeBest')||0)}catch(e){}
+ bestEl.textContent=best;
+ function reset(){
+   clearInterval(timer); snake=[{x:8,y:10},{x:7,y:10},{x:6,y:10}];
+   dir={x:1,y:0};nextDir={x:1,y:0};score=0;running=false;paused=false;over=false;
+   scoreEl.textContent=score;foodAtRandom();draw();msg.textContent='准备好了吗？点击“开始游戏”';
+ }
+ function foodAtRandom(){
+   do{food={x:Math.floor(Math.random()*CELLS),y:Math.floor(Math.random()*CELLS)}}
+   while(snake&&snake.some(p=>p.x===food.x&&p.y===food.y));
+ }
+ function roundedRect(x,y,w,h,r,color){
+   ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill();
+ }
+ function draw(){
+   ctx.clearRect(0,0,canvas.width,canvas.height);
+   ctx.fillStyle='#fbfcff';ctx.fillRect(0,0,canvas.width,canvas.height);
+   ctx.strokeStyle='#edf1fb';ctx.lineWidth=1;
+   for(let i=0;i<=CELLS;i++){ctx.beginPath();ctx.moveTo(i*STEP,0);ctx.lineTo(i*STEP,canvas.height);ctx.stroke();ctx.beginPath();ctx.moveTo(0,i*STEP);ctx.lineTo(canvas.width,i*STEP);ctx.stroke();}
+   if(food){ctx.fillStyle='#ff6d86';ctx.beginPath();ctx.arc((food.x+.5)*STEP,(food.y+.5)*STEP,STEP*.34,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ffb4c1';ctx.beginPath();ctx.arc((food.x+.39)*STEP,(food.y+.38)*STEP,STEP*.10,0,Math.PI*2);ctx.fill();}
+   if(snake)snake.forEach((p,i)=>{
+     roundedRect(p.x*STEP+1.5,p.y*STEP+1.5,STEP-3,STEP-3,5,i===0?'#327fdf':'#45c98a');
+     if(i===0){let ex=p.x*STEP+STEP/2,ey=p.y*STEP+STEP/2;ctx.fillStyle='white';
+       const eyes=dir.x!==0?[[ex,ey-4],[ex,ey+4]]:[[ex-4,ey],[ex+4,ey]];
+       eyes.forEach(e=>{ctx.beginPath();ctx.arc(e[0],e[1],2,0,Math.PI*2);ctx.fill()});
+     }
+   });
+   if(!running&&(paused||over)){
+     ctx.fillStyle='#20304a22';ctx.fillRect(0,0,canvas.width,canvas.height);
+   }
+ }
+ function tick(){
+   if(!running||paused)return;
+   dir=nextDir;
+   const head={x:snake[0].x+dir.x,y:snake[0].y+dir.y};
+   const eating=head.x===food.x&&head.y===food.y;
+   if(head.x<0||head.y<0||head.x>=CELLS||head.y>=CELLS||snake.slice(0,eating?snake.length:snake.length-1).some(p=>p.x===head.x&&p.y===head.y)){
+     running=false;over=true;clearInterval(timer);msg.textContent='游戏结束！点击“重新开始”再挑战一次。';draw();return;
+   }
+   snake.unshift(head);
+   if(eating){score+=10;scoreEl.textContent=score;foodAtRandom();if(score>best){best=score;bestEl.textContent=best;try{localStorage.setItem('cloudSnakeBest',best)}catch(e){} }}
+   else snake.pop();
+   draw();
+ }
+ function setDirection(name){
+   const map={up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}};
+   const d=map[name];if(!d)return;
+   if(d.x===-dir.x&&d.y===-dir.y)return;
+   nextDir=d;
+ }
+ function start(){
+   if(over)reset();
+   if(!running){running=true;paused=false;clearInterval(timer);timer=setInterval(tick,125);msg.textContent='加油！吃到圆点得分';}
+ }
+ document.getElementById('start').addEventListener('click',start);
+ document.getElementById('restart').addEventListener('click',()=>{reset();start()});
+ document.getElementById('pause').addEventListener('click',()=>{
+   if(over)return;
+   if(!running){start();return}
+   paused=!paused;msg.textContent=paused?'已暂停，点击“暂停”继续':'加油！吃到圆点得分';
+   document.getElementById('pause').textContent=paused?'继续':'暂停';draw();
+ });
+ document.querySelectorAll('[data-dir]').forEach(b=>b.addEventListener('click',()=>setDirection(b.dataset.dir)));
+ document.addEventListener('keydown',e=>{
+   const map={ArrowUp:'up',w:'up',W:'up',ArrowDown:'down',s:'down',S:'down',ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right'};
+   if(map[e.key]){e.preventDefault();setDirection(map[e.key]);if(!running&&!over)start();}
+   if(e.key===' '){e.preventDefault();document.getElementById('pause').click();}
+ });
+ let touchX=0,touchY=0;
+ canvas.addEventListener('touchstart',e=>{const t=e.changedTouches[0];touchX=t.clientX;touchY=t.clientY},{passive:true});
+ canvas.addEventListener('touchend',e=>{
+   const t=e.changedTouches[0],dx=t.clientX-touchX,dy=t.clientY-touchY;
+   if(Math.max(Math.abs(dx),Math.abs(dy))<18)return;
+   setDirection(Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up'));
+   if(!running&&!over)start();
+ },{passive:true});
+ reset();
+})();
+</script>
+</body>
+</html>
